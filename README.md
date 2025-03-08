@@ -1,6 +1,8 @@
 # Simple Ollama GUI Client
 
-A modern, user-friendly graphical interface for interacting with Ollama AI models locally.
+A simple, user-friendly graphical interface for interacting with Ollama AI models locally. This project is working nicely but could use a bit more polish in some areas.
+
+This project demonstrates the potential of human-AI collaboration in software development, combining human direction and oversight with AI-assisted coding and implementation.
 
 ![Ollama GUI Client Screenshot](docs/screenshots/darkmode.png)
 
