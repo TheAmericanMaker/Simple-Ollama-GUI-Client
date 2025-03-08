@@ -1,0 +1,8 @@
+# Core dependencies
+requests>=2.31.0
+Pillow>=11.0.0
+sv-ttk>=2.5.5
+
+# Optional but recommended
+setuptools>=68.0.0
+wheel>=0.40.0 
