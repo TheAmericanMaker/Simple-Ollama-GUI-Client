@@ -8,10 +8,12 @@ import sv_ttk
 
 from core.ollama_client import OllamaClient
 from utils.config import Config
+from gui.panels import FileBrowser, TerminalPanel
+from gui.agent import AgentPanel
 
 
 class OllamaGUI:
-    """Main GUI application for Ollama chat client."""
+    """Main GUI application for Ollama chat client with terminal, file browser, and agent mode."""
 
     COLORS = {
         "light": {
@@ -32,11 +34,13 @@ class OllamaGUI:
         },
     }
 
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, mode: str = "chat"):
         self.root = root
         self.root.title("Simple Ollama GUI Client")
-        self.root.geometry("900x700")
-        self.root.minsize(700, 500)
+        self.root.geometry("1200x800")
+        self.root.minsize(900, 600)
+
+        self.mode = mode
 
         self.config = Config()
         self.client = OllamaClient(
@@ -57,6 +61,7 @@ class OllamaGUI:
         self._check_connection()
 
         self.display_system_message("Welcome to Simple Ollama GUI Client!")
+        self.display_system_message(f"Mode: {self.mode}")
         self.display_system_message(f"Current model: {self.client.model}")
 
         threading.Thread(target=self._load_models, daemon=True).start()
@@ -69,10 +74,17 @@ class OllamaGUI:
         file_menu.add_command(label="Open Chat", command=self._load_chat)
         file_menu.add_command(label="Save Chat", command=self._save_chat)
         file_menu.add_command(label="Save Chat As...", command=lambda: self._save_chat(save_as=True))
-        file_menu.add_command(label="Rename Current Chat", command=self._rename_chat)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
         self.menubar.add_cascade(label="File", menu=file_menu)
+
+        view_menu = Menu(self.menubar, tearoff=0)
+        view_menu.add_command(label="Chat Mode", command=lambda: self._switch_mode("chat"))
+        view_menu.add_command(label="Terminal Mode", command=lambda: self._switch_mode("terminal"))
+        view_menu.add_command(label="Files Mode", command=lambda: self._switch_mode("files"))
+        view_menu.add_command(label="Agent Mode", command=lambda: self._switch_mode("agent"))
+        view_menu.add_command(label="All Panels", command=lambda: self._switch_mode("all"))
+        self.menubar.add_cascade(label="View", menu=view_menu)
 
         edit_menu = Menu(self.menubar, tearoff=0)
         edit_menu.add_command(label="Copy Selected", command=self._copy_selected)
@@ -93,14 +105,31 @@ class OllamaGUI:
         self.root.config(menu=self.menubar)
 
     def _create_widgets(self) -> None:
-        padding = {"padx": 12, "pady": 12}
-        small_padding = {"padx": 6, "pady": 6}
+        padding = {"padx": 8, "pady": 8}
+        small_padding = {"padx": 4, "pady": 4}
 
-        self.main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        self.main_paned.pack(fill=tk.BOTH, expand=True, **padding)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        self.left_frame = ttk.Frame(self.main_paned)
-        self.main_paned.add(self.left_frame, weight=3)
+        self.chat_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.chat_tab, text="Chat")
+
+        self.terminal_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.terminal_tab, text="Terminal")
+
+        self.agent_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.agent_tab, text="Agent")
+
+        self._create_chat_widgets(self.chat_tab, padding, small_padding)
+        self._create_terminal_widgets(self.terminal_tab)
+        self._create_agent_widgets(self.agent_tab)
+
+    def _create_chat_widgets(self, parent, padding, small_padding) -> None:
+        main_paned = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
+        main_paned.pack(fill=tk.BOTH, expand=True, **padding)
+
+        self.left_frame = ttk.Frame(main_paned)
+        main_paned.add(self.left_frame, weight=3)
 
         self.conversation_frame = ttk.Frame(self.left_frame)
         self.conversation_frame.pack(fill=tk.BOTH, expand=True)
@@ -147,8 +176,8 @@ class OllamaGUI:
         )
         self.send_button.pack(side=tk.RIGHT)
 
-        self.right_frame = ttk.Frame(self.main_paned)
-        self.main_paned.add(self.right_frame, weight=1)
+        self.right_frame = ttk.Frame(main_paned)
+        main_paned.add(self.right_frame, weight=1)
 
         self.model_frame = ttk.LabelFrame(self.right_frame, text="Model Selection")
         self.model_frame.pack(fill=tk.X, **small_padding)
@@ -219,21 +248,45 @@ class OllamaGUI:
             style="Accent.TButton",
         ).pack(fill=tk.X, **small_padding)
 
-        self.commands_frame = ttk.LabelFrame(self.right_frame, text="Commands")
-        self.commands_frame.pack(fill=tk.X, **small_padding)
+    def _create_terminal_widgets(self, parent) -> None:
+        self.terminal = TerminalPanel(parent, on_command=self._run_terminal_command)
+        self.terminal.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        for text, cmd in [
-            ("Save Chat", self._save_chat),
-            ("Load Chat", self._load_chat),
-            ("Clear Chat", self._clear_chat),
-            ("Toggle Theme", self._toggle_theme),
-        ]:
-            ttk.Button(
-                self.commands_frame,
-                text=text,
-                command=cmd,
-                style="Accent.TButton",
-            ).pack(fill=tk.X, **small_padding)
+    def _create_agent_widgets(self, parent) -> None:
+        self.agent_panel = AgentPanel(parent, self.client)
+        self.agent_panel.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+    def _run_terminal_command(self, cmd: str, output_callback) -> None:
+        """Run a shell command in a thread."""
+        import subprocess
+
+        def run():
+            try:
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                output = result.stdout or result.stderr or "[No output]"
+                output_callback(output + "\n")
+            except subprocess.TimeoutExpired:
+                output_callback("[Timeout - process took too long]\n")
+            except Exception as e:
+                output_callback(f"[Error] {str(e)}\n")
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _switch_mode(self, mode: str) -> None:
+        self.mode = mode
+        if mode == "chat":
+            self.notebook.select(self.chat_tab)
+        elif mode == "terminal":
+            self.notebook.select(self.terminal_tab)
+        elif mode == "agent":
+            self.notebook.select(self.agent_tab)
+        self.display_system_message(f"Switched to {mode} mode")
 
     def _apply_theme(self) -> None:
         sv_ttk.set_theme(self.theme)
@@ -413,7 +466,7 @@ class OllamaGUI:
         button_frame = ttk.Frame(dialog)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
 
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy()).pack(side=tk.RIGHT, padx=5)
         ttk.Button(button_frame, text="Save", command=save_prompt).pack(side=tk.RIGHT, padx=5)
 
     def display_system_message(self, message: str) -> None:
@@ -541,45 +594,6 @@ class OllamaGUI:
             self.current_file_path = filename
             self.display_system_message(f"Conversation saved to {filename}")
 
-    def _rename_chat(self) -> None:
-        if not self.current_file_path:
-            messagebox.showinfo("Rename Chat", "Please save the chat first before renaming.")
-            return
-
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Rename Chat")
-        dialog.geometry("400x150")
-        dialog.resizable(False, False)
-        dialog.transient(self.root)
-        dialog.grab_set()
-
-        ttk.Label(dialog, text="Enter a new name for this chat:").grid(row=0, column=0, padx=10, pady=10, sticky=tk.W)
-
-        import os
-
-        current_name = self.client.chat_name or os.path.basename(self.current_file_path).split(".")[0]
-        name_var = tk.StringVar(value=current_name)
-        name_entry = ttk.Entry(dialog, textvariable=name_var, width=30)
-        name_entry.grid(row=0, column=1, padx=10, pady=10)
-        name_entry.select_range(0, tk.END)
-        name_entry.focus()
-
-        def do_rename() -> None:
-            new_name = name_var.get().strip()
-            if new_name and new_name != current_name:
-                success, result = self.client.rename_chat_file(self.current_file_path, new_name)
-                if success:
-                    self.current_file_path = result
-                    self.client.chat_name = new_name
-                    self.display_system_message(f"Chat renamed to: {new_name}")
-                else:
-                    messagebox.showerror("Rename Error", f"Failed to rename chat: {result}")
-            dialog.destroy()
-
-        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(row=1, column=0, padx=10, pady=10)
-        ttk.Button(dialog, text="Rename", command=do_rename).grid(row=1, column=1, padx=10, pady=10)
-        dialog.bind("<Return>", lambda event: do_rename())
-
     def _load_chat(self) -> None:
         filename = filedialog.askopenfilename(
             initialdir=self.client.save_dir,
@@ -607,7 +621,7 @@ class OllamaGUI:
             self.temp_label.config(text=f"{self.temp_var.get():.2f}")
             self.top_p_label.config(text=f"{self.top_p_var.get():.2f}")
 
-            chat_name = self.client.chat_name or os.path.basename(filename)
+            chat_name = self.client.chat_name or filename.split("/")[-1]
             self.display_system_message(f"Loaded conversation: {chat_name}")
 
             for exchange in self.client.conversation:
@@ -640,62 +654,19 @@ class OllamaGUI:
         main_frame = ttk.Frame(notebook)
         notebook.add(main_frame, text="About")
 
-        ttk.Label(
-            main_frame, text="Simple Ollama GUI Client", font=("Segoe UI", 16, "bold")
-        ).pack(pady=(15, 5))
-        ttk.Label(main_frame, text="Version 1.0").pack(pady=(0, 15))
+        ttk.Label(main_frame, text="Simple Ollama GUI Client", font=("Segoe UI", 16, "bold")).pack(pady=(15, 5))
+        ttk.Label(main_frame, text="Version 2.0").pack(pady=(0, 15))
 
         desc = (
-            "A user-friendly GUI client for interacting with Ollama's AI models.\n"
-            "Features include chat history management, parameter controls,\n"
-            "theming, and system prompt configuration."
+            "A GUI client for Ollama with integrated terminal,\n"
+            "file browser, and agent mode for AI-powered file editing.\n\n"
+            "Modes:\n"
+            "- Chat: Standard conversation with Ollama\n"
+            "- Terminal: Run commands directly\n"
+            "- Agent: AI-powered file editing\n\n"
+            "Built with Python and Tkinter"
         )
         ttk.Label(main_frame, text=desc, justify=tk.CENTER).pack(pady=(0, 15))
-
-        credits_frame = ttk.LabelFrame(main_frame, text="Credits")
-        credits_frame.pack(fill=tk.X, padx=20, pady=5)
-
-        credits_text = (
-            "Project Manager: TheAmericanMaker\n"
-            "AI Coding Assistant: Claude (Anthropic)\n"
-            "Built with: Python and Tkinter\n"
-            "Uses: Ollama API for model inference"
-        )
-        ttk.Label(credits_frame, text=credits_text, justify=tk.LEFT).pack(padx=10, pady=10)
-
-        ttk.Label(main_frame, text=f"Created: {datetime.now().strftime('%B %Y')}").pack(pady=(15, 5))
-
-        details_frame = ttk.Frame(notebook)
-        notebook.add(details_frame, text="Development")
-
-        details_text = scrolledtext.ScrolledText(details_frame, wrap=tk.WORD)
-        details_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        details_text.insert(
-            tk.END,
-            "Development Process:\n\n"
-            "This application was created through an AI-assisted development process.\n\n"
-            "Technology Stack:\n"
-            "- Python 3\n"
-            "- Tkinter\n"
-            "- Requests\n"
-            "- Ollama API",
-        )
-        details_text.config(state=tk.DISABLED)
-
-        license_frame = ttk.Frame(notebook)
-        notebook.add(license_frame, text="License")
-
-        license_text = scrolledtext.ScrolledText(license_frame, wrap=tk.WORD)
-        license_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        license_text.insert(
-            tk.END,
-            "MIT License 2025 TheAmericanMaker\n\n"
-            "Permission is hereby granted, free of charge, to any person obtaining a copy "
-            "of this software... (see LICENSE file for full text)",
-        )
-        license_text.config(state=tk.DISABLED)
 
         ttk.Button(about_window, text="Close", command=about_window.destroy).pack(pady=10)
 

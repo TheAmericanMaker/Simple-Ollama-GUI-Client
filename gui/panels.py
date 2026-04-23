@@ -22,7 +22,7 @@ class FileBrowser(ttk.Frame):
         self.path_entry = ttk.Entry(self)
         self.path_entry.pack(fill=tk.X, padx=5, pady=(0, 5))
         self.path_entry.insert(0, self.current_path)
-        self.path_entry.bind("<Return>", lambda e: self._ navigate_to(self.path_entry.get()))
+        self.path_entry.bind("<Return>", lambda e: self._navigate_to(self.path_entry.get()))
 
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
