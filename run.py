@@ -1,28 +1,41 @@
-#!/usr/bin/env python
-import os
+import logging
 import sys
-import subprocess
 
-def run_app():
-    """Run the Ollama GUI application with the virtual environment"""
-    # Get the absolute path to this script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Define paths
-    if sys.platform.startswith('win'):
-        python_path = os.path.join(script_dir, '.venv', 'Scripts', 'python.exe')
-    else:
-        python_path = os.path.join(script_dir, '.venv', 'bin', 'python')
-    
-    app_path = os.path.join(script_dir, 'Simple Ollama GUI Client.py')
-    
-    # Check if virtual environment exists
-    if not os.path.exists(python_path):
-        print("Virtual environment not found. Please set up the environment first.")
-        return
-    
-    # Run the application
-    subprocess.run([python_path, app_path])
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    filename="ollama_chat.log",
+    filemode="a",
+)
+
+logger = logging.getLogger("OllamaChat")
+
+
+def install_dependencies():
+    try:
+        import sv_ttk
+    except ImportError:
+        print("Installing sv_ttk for modern theme...")
+        try:
+            import subprocess
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "sv-ttk"])
+            import sv_ttk
+            print("Successfully installed sv_ttk!")
+        except Exception as e:
+            print(f"Failed to install sv_ttk: {e}")
+            print("Continuing with default theme...")
+
+
+def main():
+    install_dependencies()
+
+    import tkinter as tk
+    from gui.main import OllamaGUI
+
+    root = tk.Tk()
+    app = OllamaGUI(root)
+    root.mainloop()
+
 
 if __name__ == "__main__":
-    run_app() 
+    main()
